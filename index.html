@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extreme 3D Wrestling Championship</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #05050a;
+            font-family: 'Impact', 'Arial Black', sans-serif;
+            user-select: none;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 25px;
+            box-sizing: border-box;
+            z-index: 5;
+        }
+        .hud-panel {
+            pointer-events: auto;
+            background: linear-gradient(180deg, rgba(20,20,30,0.9) 0%, rgba(10,10,15,0.95) 100%);
+            border: 3px solid #ff3300;
+            border-radius: 12px;
+            padding: 15px 30px;
+            color: #fff;
+            box-shadow: 0 0 20px rgba(255, 51, 0, 0.4);
+        }
+        #match-header {
+            align-self: center;
+            display: flex;
+            gap: 50px;
+            align-items: center;
+            text-align: center;
+        }
+        .wrestler-stats {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .wrestler-name { font-size: 1.8rem; text-transform: uppercase; letter-spacing: 1px; color: #ffcc00;}
+        .health-bar-container {
+            width: 200px;
+            height: 20px;
+            background: #333;
+            border: 2px solid #fff;
+            margin-top: 8px;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .health-bar {
+            width: 100%;
+            height: 100%;
+            background: #00ff66;
+            transition: width 0.3s ease;
+        }
+        #action-controls {
+            align-self: center;
+            margin-bottom: 20px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+        .btn-strike {
+            pointer-events: auto;
+            background: linear-gradient(45deg, #ff3300, #ff6600);
+            color: #fff;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            text-transform: uppercase;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(255, 51, 0, 0.4);
+            transition: 0.2s;
+        }
+        .btn-strike:hover {
+            transform: scale(1.08) rotate(-1deg);
+            background: linear-gradient(45deg, #ff6600, #ffcc00);
+            box-shadow: 0 0 25px #ffcc00;
+        }
+        #commentary-box {
+            font-size: 1.4rem;
+            color: #fff;
+            text-shadow: 0 3px 6px #000;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 20px;
+            border-radius: 8px;
+        }
+    </style>
+    <!-- Include Three.js Graphic Library via Content Delivery Network -->
+    <script src="https://cloudflare.com"></script>
+</head>
+<body>
+
+    <!-- Target mounting node element for the 3D Render Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Gameplay HUD Control Matrix Base Layout Layer -->
+    <div id="ui-layer">
+        <!-- Main Arena Scoreboard and Vital Stat Monitoring Elements -->
+        <div class="hud-panel" id="match-header">
+            <div class="wrestler-stats">
+                <span class="wrestler-name">Player 1 (You)</span>
+                <div class="health-bar-container"><div class="health-bar" id="p1-health"></div></div>
+            </div>
+            <div style="font-size: 2.2rem; color: #ff3300; font-style: italic;">VS</div>
+            <div class="wrestler-stats">
+                <span class="wrestler-name">Rival Champion</span>
+                <div class="health-bar-container"><div class="health-bar" id="p2-health"></div></div>
+            </div>
+        </div>
+
+        <!-- Combat Execution Button and Live Commentary Feed Panel -->
+        <div id="action-controls">
+            <div id="commentary-box">💥 Welcome to the Ring! Press ATTACK to slam your opponent!</div>
+            <button class="btn-strike" onclick="executeWrestlingMove()">💥 EXECUTE ATTACK Move</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. CORE ENGINE & GRAPHIC STATE VARIABLES ---
+        let scene, camera, renderer;
+        let wrestler1, wrestler2;
+        let p1Health = 100, p2Health = 100;
+        let isAttacking = false;
+
+        const extremeMoves = [
+            { name: "Suplex City Drop", damage: 15, text: "BAH精神! A massive Suplex onto the hard canvas!" },
+            { name: "Chokeslam From Hell", damage: 22, text: "CHOKESLAMMED right through the middle of the ring!" },
+            { name: "Tombstone Piledriver", damage: 30, text: "OH MY GOD! Tombstone Piledriver! This could be it!" },
+            { name: "Frog Splash off the Top Rope", damage: 18, text: "High flying execution! Frog Splash connected perfectly!" },
+            { name: "Heavy Steel Chair Shot", damage: 25, text: "WHACK! A brutal illegal chair shot to the back!" }
+        ];
+
+        // --- 2. ENGINE INCEPTION BOOTSTRAPPING HOOK ---
+        function initWrestlingEngine() {
+            const container = document.getElementById('canvas-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050510);
+            scene.fog = new THREE.FogExp2(0x050510, 0.025);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 8, 16);
+            camera.lookAt(0, 1.5, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            buildChampionshipRing();
+            spawn3DWrestlers();
+            setupArenaLighting();
+
+            window.addEventListener('resize', onResizeWindow, false);
+            engineRenderLoop();
+        }
+
+        // --- 3. ARCHITECTING THE ORIGINAL 3D RING GRID ---
+        function buildChampionshipRing() {
+            // Ring Mat Platform Plane Structure Mesh Setup
+            const matGeo = new THREE.BoxGeometry(10, 0.8, 10);
+            const matMat = new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.7 });
+            const ringCanvas = new THREE.Mesh(matGeo, matMat);
+            ringCanvas.position.y = 0.4;
+            ringCanvas.receiveShadow = true;
+            scene.add(ringCanvas);
+
+            // Ring Apron Border Floor Base Matrix Setup
+            const apronGeo = new THREE.BoxGeometry(11, 0.7, 11);
+            const apronMat = new THREE.MeshStandardMaterial({ color: #ff3300, roughness: 0.5 });
+            const apron = new THREE.Mesh(apronGeo, apronMat);
+            apron.position.y = 0.35;
+            scene.add(apron);
+
+            // Spawning Ring Posts Corners System Anchors
+            const postGeo = new THREE.CylinderGeometry(0.15, 0.15, 3.5);
+            const postMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8 });
+            
+            const positions = [
+                [-5, 5], [5, 5], [-5, -5], [5, -5]
+            ];
+
+            positions.forEach(pos => {
+                const cornerPost = new THREE.Mesh(postGeo, postMat);
+                cornerPost.position.set(pos[0], 1.75, pos[1]);
+                scene.add(cornerPost);
+            });
+        }
+
+        // --- 4. GENERATING 3D REPRESENTATIONS FOR FIGHTERS ---
+        function spawn3DWrestlers() {
+            // Player 1 (You) Character Representation Mesh Capsule Model 
+            const p1Geo = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 16);
+            const p1Mat = new THREE.MeshStandardMaterial({ color: 0x00ccff, roughness: 0.4 });
+            wrestler1 = new THREE.Mesh(p1Geo, p1Mat);
+            wrestler1.position.set(-2, 1.7, 0);
+            wrestler1.castShadow = true;
+            scene.add(wrestler1);
+
+            // Rival AI Champion Character Representation Mesh Capsule Model 
+            const p2Geo = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 16);
+            const p2Mat = new THREE.MeshStandardMaterial({ color: 0xff3300, roughness: 0.4 });
+            wrestler2 = new THREE.Mesh(p2Geo, p2Mat);
+            wrestler2.position.set(2, 1.7, 0);
+            wrestler2.castShadow = true;
+            scene.add(wrestler2);
+        }
+
+        // --- 5. DEPLOYING SPOTLIGHT STADIUM ATMOSPHERE ---
+        function setupArenaLighting() {
+            scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+
+            // Dramatic Over-Head Ring Lighting Core Nodes Profiles
+            const ringLight = new THREE.SpotLight(0xffffff, 2);
+            ringLight.position.set(0, 15, 0);
+            ringLight.target.position.set(0, 0, 0);
+            ringLight.castShadow = true;
+            scene.add(ringLight);
+        }
+
+        // --- 6. REAL-TIME GAMEPLAY COMBAT ANIMATION MATRIX ---
+        function executeWrestlingMove() {
+            if (isAttacking || p1Health <= 0 || p2Health <= 0) return;
+            isAttacking = true;
+
+            // Pick a completely random devastating original wrestling attack move profile
+            const randomMove = extremeMoves[Math.floor(Math.random() * extremeMoves.length)];
+            
+            // Trigger 3D Slam Animation Mechanics (Move P1 towards P2 quickly)
+            const originalX = wrestler1.position.x;
+            
+// Frame Tween Sequence Simulation Framework Loop
+let frame = 0;
+function strikeAnimation() {
+frame++;
+if (frame <= 10) {
+// Leap into combat space vector
+wrestler1.position.x += (wrestler2.position.x - originalX) / 10;
+wrestler1.position.y += 0.15; // Vertical jump arc velocity
+} else if (frame <= 20) {
+// Slam execution down rebound profile phase impact
+wrestler1.position.x -= (wrestler2.position.x - originalX) / 10;
+wrestler1.position.y -= 0.15;
+wrestler2.position.position; // Shock shake vibration trigger line placeholder template
+} else {
+// Reset positions tracking coordinates parameters profiles limits keys
+wrestler1.position.set(-2, 1.7, 0);
+// Apply Damage calculations profiles bounds matrix fields
+p2Health -= randomMove.damage;
+if(p2Health < 0) p2Health = 0;
+document.getElementById('p2-health').style.width = p2Health + '%';
+document.getElementById('commentary-box').innerText = randomMove.text;
+// Check Match Finish Status Logic Blocks
+if (p2Health <= 0) {
+document.getElementById('commentary-box').innerText = "🏆 1-2-3! IT'S OVER! YOU ARE THE NEW WORLD HEAVYWEIGHT CHAMPION!!!";
+return;
+}
+// Execute AI Counter-Attack Sequence after short safety window buffer
+setTimeout(executeAICounterMove, 1500);
+isAttacking = false;
+return;
+}
+requestAnimationFrame(strikeAnimation);
+}
+strikeAnimation();
+}
+function executeAICounterMove() {
+if(p1Health <= 0 || p2Health <= 0) return;
+const randomMove = extremeMoves[Math.floor(Math.random() * extremeMoves.length)];
+p1Health -= Math.floor(randomMove.damage * 0.7); // AI deals slightly scaled counter damage
+if(p1Health < 0) p1Health = 0;
+document.getElementById('p1-health').style.width = p1Health + '%';
+document.getElementById('commentary-box').innerText = ⚠️ COUNTER! Rival Champion strikes back with a ${randomMove.name}!;
+if (p1Health <= 0) {
+document.getElementById('commentary-box').innerText = "😭 DEFEAT! You got pinned in the middle of the ring. Game Over.";
+}
+}
+// --- 7. GRAPHICS RENDERING & LOOK LOOP REFRESH PIPELINE ---
+function engineRenderLoop() {
+requestAnimationFrame(engineRenderLoop);
+// Continuous subtle arena ring cameras orbit animation movement profiling track loops
+if(!isAttacking) {
+const time = Date.now() * 0.0005;
+camera.position.x = Math.sin(time) * 0.5;
+}
+renderer.render(scene, camera);
+}
+function onResizeWindow() {
+camera.aspect = window.innerWidth / window.innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(window.innerWidth, window.innerHeight);
+}
+// Fire engine initiation process after window assets layout elements array generation
+window.onload = initWrestlingEngine;
+
+
